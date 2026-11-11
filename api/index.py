@@ -15,11 +15,10 @@ ADMIN_ID = 8898908182
 REDIS_URL = "https://relieved-fawn-197670.upstash.io"
 REDIS_TOKEN = "gQAAAAAAAwQmAAIgcDE2MmFlM2JjYTBmY2M0MzMyYjRiNzRlMTEyOWYyOGY4OA"
 
-VERCEL_DOMAIN = "https://your-project-name.vercel.app" 
+# آدرس سایت شما که از ورسل گرفتیم
+VERCEL_DOMAIN = "https://saas-bot-uyu8.vercel.app" 
 
 redis = Redis(url=REDIS_URL, token=REDIS_TOKEN)
-
-# اصلاح اصلی برای ورسل: نام متغیر دقیقاً باید app باشد
 app = FastAPI()
 
 def load_db():
@@ -98,7 +97,7 @@ async def main_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer("نسخه ابری با موفقیت متصل شد!", show_alert=True)
+    await update.callback_query.answer("سیستم با موفقیت به سرور ابری متصل است!", show_alert=True)
     return ConversationHandler.END
 
 main_conv_handler = ConversationHandler(
