@@ -67,7 +67,8 @@ async def telegram_webhook(token: str, request: Request):
     await application.process_update(update)
     return {"ok": True}
 
-@app.get("/api/setup")
+# تغییر مسیر ستاپ به آدرس اصلی سایت
+@app.get("/")
 async def setup_webhooks():
     db = load_db()
     results = []
