@@ -9,7 +9,7 @@ from telegram.ext import (
 from upstash_redis import Redis
 
 # === تنظیمات اصلی ===
-MAIN_BOT_TOKEN = "8831950444:AAFB8jcSo_VjjcuRDMR0dtMSrwEezaVoAoQ"
+MAIN_BOT_TOKEN = "9018084227:AAFacpqEejBGK71LOO_2BiiX6PHiWJaMed4"
 ADMIN_ID = 8898908182  
 REDIS_URL = "https://relieved-fawn-197670.upstash.io"
 REDIS_TOKEN = "gQAAAAAAAwQmAAIgcDE2MmFlM2JjYTBmY2M0MzMyYjRiNzRlMTEyOWYyOGY4OA"
