@@ -1,11 +1,10 @@
 import json
-import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from fastapi import FastAPI, Request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, CallbackQueryHandler, 
-    filters, ContextTypes, ConversationHandler
+    Application, CommandHandler, CallbackQueryHandler, 
+    ContextTypes, ConversationHandler
 )
 from upstash_redis import Redis
 
@@ -14,8 +13,6 @@ MAIN_BOT_TOKEN = "8831950444:AAFB8jcSo_VjjcuRDMR0dtMSrwEezaVoAoQ"
 ADMIN_ID = 8898908182  
 REDIS_URL = "https://relieved-fawn-197670.upstash.io"
 REDIS_TOKEN = "gQAAAAAAAwQmAAIgcDE2MmFlM2JjYTBmY2M0MzMyYjRiNzRlMTEyOWYyOGY4OA"
-
-# آدرس سایت شما که از ورسل گرفتیم
 VERCEL_DOMAIN = "https://saas-bot-uyu8.vercel.app" 
 
 redis = Redis(url=REDIS_URL, token=REDIS_TOKEN)
@@ -47,11 +44,14 @@ async def get_app(token: str, is_main: bool, admin_id=None):
         apps[token] = application
     return apps[token]
 
-@app.post("/api/webhook/{token}")
-async def telegram_webhook(token: str, request: Request):
+# دریافت تمام پیام‌های تلگرام در هر مسیری (بدون خطای 404)
+@app.post("/{full_path:path}")
+async def telegram_webhook(full_path: str, request: Request):
+    token = request.query_params.get("token", MAIN_BOT_TOKEN)
     db = load_db()
     is_main = (token == MAIN_BOT_TOKEN)
     admin_id = None
+    
     if not is_main:
         uid = get_uid_by_token(token, db)
         if not uid: return {"ok": False, "error": "Bot Not Found"}
@@ -67,13 +67,13 @@ async def telegram_webhook(token: str, request: Request):
     await application.process_update(update)
     return {"ok": True}
 
-# تغییر مسیر ستاپ به آدرس اصلی سایت
-@app.get("/")
-async def setup_webhooks():
+# فعال‌سازی خودکار با باز کردن هر آدرسی از سایت در مرورگر
+@app.get("/{full_path:path}")
+async def setup_webhooks(full_path: str):
     db = load_db()
     results = []
     bot = Bot(MAIN_BOT_TOKEN)
-    await bot.set_webhook(f"{VERCEL_DOMAIN}/api/webhook/{MAIN_BOT_TOKEN}")
+    await bot.set_webhook(f"{VERCEL_DOMAIN}/?token={MAIN_BOT_TOKEN}")
     results.append("Main Bot Setup Success")
     
     for uid, udata in db.items():
@@ -81,7 +81,7 @@ async def setup_webhooks():
         for token, bdata in udata.get('bots', {}).items():
             if datetime.fromisoformat(bdata['expiry_date']) > datetime.now():
                 cbot = Bot(token)
-                await cbot.set_webhook(f"{VERCEL_DOMAIN}/api/webhook/{token}")
+                await cbot.set_webhook(f"{VERCEL_DOMAIN}/?token={token}")
                 results.append(f"Child Bot {token[:10]}... Setup Success")
     return {"status": "All Webhooks Connected!", "details": results}
 
@@ -93,8 +93,8 @@ async def main_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_db(db)
     msg = "🤖 **به پنل مدیریت ربات‌ساز ناشناس خوش آمدید.**\nاز منوی زیر استفاده کنید:"
     keyboard = [[InlineKeyboardButton("🛒 خرید اشتراک", callback_data="buy_new")]]
-    if update.message: await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard))
-    else: await update.callback_query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard))
+    if update.message: await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+    else: await update.callback_query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
     return ConversationHandler.END
 
 async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
