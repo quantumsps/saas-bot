@@ -338,7 +338,7 @@ async def handle_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYP
             "📚 **راهنمای جامع پلتفرم ربات‌ساز پیام ناشناس**\n\n"
             "به سیستم هوشمند ساخت و مدیریت ربات‌های پیام ناشناس خوش آمدید! با این پنل می‌توانید ربات اختصاصی خود را با امکانات پیشرفته مدیریت کنید.\n\n"
             "🛒 **۱. تهیه اشتراک:**\n"
-            "برای شروع، از منوی اصلی روی «خرید اشتراک جدید» کلیک کنید. شما می‌توانید از **پلن ۷ روزه رایگان** (فقط برای یک‌بار) استفاده کنید و یا پلن‌های ۱ تا ۳ ماهه را با پرداخت کارت‌به‌کارت خریداری کنید.\n\n"
+            "برای شروع، از منوی اصلی روی «خرید اشتراک جدید» کلیک کنید. شما می‌توانید از **پلن 7 روزه رایگان** (فقط برای یک‌بار) استفاده کنید و یا پلن‌های 1 تا 3 ماهه را با پرداخت کارت‌به‌کارت خریداری کنید.\n\n"
             "🔑 **۲. راه‌اندازی ربات:**\n"
             "پس از فعال شدن اشتراک، روی «راه‌اندازی ربات از اشتراک» کلیک کنید:\n"
             "🔹 ابتدا توکن ربات خود را (که از @BotFather دریافت کرده‌اید) بفرستید.\n"
@@ -395,7 +395,7 @@ async def handle_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYP
         if target_uid not in db: db[target_uid] = {'credits': [], 'bots': {}, 'used_free_trial': False}
         db[target_uid]['credits'].append(30)
         save_db(db)
-        await query.edit_message_text(f"✅ یک اشتراک ۳۰ روزه به کاربر `{target_uid}` اضافه شد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")]]), parse_mode='Markdown')
+        await query.edit_message_text(f"✅ یک اشتراک 30 روزه به کاربر `{target_uid}` اضافه شد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")]]), parse_mode='Markdown')
 
     elif data.startswith("admb_"):
         if int(user_id) != ADMIN_ID: return
@@ -421,9 +421,9 @@ async def handle_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYP
             return
             
         keyboard = [
-            [InlineKeyboardButton("1 ماهه - 100 هزار تومان", callback_data="buyplan_new_30")],
-            [InlineKeyboardButton("2 ماهه - 180 هزار تومان", callback_data="buyplan_new_60")],
-            [InlineKeyboardButton("3 ماهه - 270 هزار تومان", callback_data="buyplan_new_90")],
+            [InlineKeyboardButton("1 ماهه - 50 هزار تومان", callback_data="buyplan_new_30")],
+            [InlineKeyboardButton("2 ماهه - 80 هزار تومان", callback_data="buyplan_new_60")],
+            [InlineKeyboardButton("3 ماهه - 120 هزار تومان", callback_data="buyplan_new_90")],
             [InlineKeyboardButton("❌ انصراف", callback_data="cancel_flow")]
         ]
         
@@ -472,7 +472,7 @@ async def handle_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYP
             await query.edit_message_text("❌ شما هیچ اشتراک استفاده نشده‌ای ندارید.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")]]))
             return
         set_state(db, "main", user_id, WAITING_TOKEN)
-        await query.edit_message_text("🔑 **مرحله ۱:** لطفاً توکن ربات جدید را ارسال کنید:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ لغو", callback_data="cancel_flow")]]), parse_mode='Markdown')
+        await query.edit_message_text("🔑 **مرحله 1:** لطفاً توکن ربات جدید را ارسال کنید:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ لغو", callback_data="cancel_flow")]]), parse_mode='Markdown')
 
     elif data == "user_bots":
         bots = db.get(user_id, {}).get('bots', {})
@@ -724,7 +724,7 @@ async def main_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         udata = db[target_uid]
         msg = f"👤 **مدیریت کاربر:** `{target_uid}`\nاعتبارهای استفاده نشده: {len(udata.get('credits', []))}\nتعداد ربات‌ها: {len(udata.get('bots', {}))}"
-        keyboard = [[InlineKeyboardButton("➕ افزودن ۱ اشتراک ۳۰ روزه", callback_data=f"admaddcred_{target_uid}")]]
+        keyboard = [[InlineKeyboardButton("➕ افزودن 1 اشتراک 30 روزه", callback_data=f"admaddcred_{target_uid}")]]
         for t, bdata in udata.get('bots', {}).items():
             bid = t.split(':')[0]
             st_icon = "⛔️" if bdata.get('admin_disabled') else "✅"
