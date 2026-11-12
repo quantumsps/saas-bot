@@ -67,6 +67,7 @@ def load_db():
             if 'blocked_users' not in bdata: bdata['blocked_users'] = []
             if 'bad_words' not in bdata: bdata['bad_words'] = []
             if 'warns' not in bdata: bdata['warns'] = {}
+            if 'known_users' not in bdata: bdata['known_users'] = []
             elif isinstance(bdata['co_admins'], list): 
                 bdata['co_admins'] = {str(k): "بدون نام" for k in bdata['co_admins']}
     return db
@@ -123,6 +124,16 @@ def block_user_in_db(token, user_id):
         return True
     return False
 
+def track_user(token, user_id):
+    db = load_db()
+    uid = get_uid_by_token(token, db)
+    if uid:
+        bdata = db[uid]['bots'][token]
+        if 'known_users' not in bdata: bdata['known_users'] = []
+        if user_id not in bdata['known_users']:
+            bdata['known_users'].append(user_id)
+            save_db(db)
+
 async def sync_bot_state(uid, token, db):
     bdata = db[str(uid)]['bots'][token]
     cbot = Bot(token)
@@ -178,6 +189,8 @@ async def child_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.message: await update.message.reply_text("⛔️ شما از طرف مدیریت این ربات مسدود شده‌اید.")
         return
 
+    track_user(token, user_id)
+
     force_join = bdata.get('force_join')
     if force_join:
         try:
@@ -221,6 +234,7 @@ async def child_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text("⛔️ شما مسدود شده‌اید.")
             return
             
+        track_user(token, user_id)
         force_join = bdata.get('force_join')
         if force_join and not is_admin:
             try:
@@ -290,7 +304,6 @@ async def child_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bdata['warns'][str(target_anon_id)] = curr_warns
         save_db(db)
         
-        # ارسال هشدار به کاربر
         try:
             await context.bot.send_message(
                 chat_id=target_anon_id, 
@@ -340,6 +353,9 @@ async def child_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_id = context.bot_data['admin_id']
     is_admin = (user_id == admin_id or str(user_id) in co_admins)
     
+    if not is_admin:
+        track_user(token, user_id)
+
     st = get_state(db, bot_id, user_id)
     state = st['state']
 
@@ -348,12 +364,12 @@ async def child_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         success = 0
         await update.message.reply_text("⏳ در حال ارسال پیام همگانی...")
         
-        # جمع‌آوری تمام کاربرانی که به این ربات پیام داده‌اند (از طریق لیست مسدودها یا پیام‌ها)
-        # برای سادگی، به همه کسانی که در بات پیام دادند یا در دیتابیس ثبت شدند ارسال می‌کنیم
-        all_chats = [int(uid_key) for uid_key in bdata.get('warns', {}).keys()]
-        # همچنین کاربرانی که مسدود هستند را هم در نظر می‌گیریم
+        # استخراج دقیق تمام کاربرانی که تاکنون با ربات تعامل داشته‌اند
+        all_chats = set(bdata.get('known_users', []))
+        for w_uid in bdata.get('warns', {}).keys():
+            all_chats.add(int(w_uid))
         for b_uid in bdata.get('blocked_users', []):
-            if b_uid not in all_chats: all_chats.append(b_uid)
+            all_chats.add(b_uid)
             
         for target_u in all_chats:
             try:
@@ -380,7 +396,6 @@ async def child_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not is_admin:
-        # بررسی فیلتر کلمات رکیک برای کاربران عادی
         bad_words = bdata.get('bad_words', [])
         if bad_words and update.message.text:
             msg_text = update.message.text.lower()
@@ -757,7 +772,7 @@ async def main_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db[user_id]['bots'][token] = {
             'admin_id': admin_id_child, 'expiry_date': (datetime.now() + timedelta(days=days)).isoformat(),
             'warned': False, 'admin_disabled': False, 'user_disabled': False, 'blocked_users': [],
-            'bot_name': "", 'co_admins': {}, 'force_join': "", 'bad_words': [], 'warns': {}
+            'bot_name': "", 'co_admins': {}, 'force_join': "", 'bad_words': [], 'warns': {}, 'known_users': []
         }
         set_state(db, "main", user_id, None)
         await sync_bot_state(user_id, token, db)
