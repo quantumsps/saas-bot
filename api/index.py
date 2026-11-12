@@ -32,7 +32,8 @@ PLANS = {
  WAITING_BROADCAST, WAITING_FORCE_JOIN) = range(1, 12)
 
 # وضعیت‌های ربات‌های مشتری
-CHILD_WAITING_MSG, CHILD_ADMIN_REPLY = 1, 2
+(CHILD_WAITING_MSG, CHILD_ADMIN_REPLY, CHILD_WAITING_BROADCAST, 
+ CHILD_WAITING_BAD_WORD, CHILD_WAITING_WARN_REASON) = range(1, 6)
 
 redis = Redis(url=REDIS_URL, token=REDIS_TOKEN)
 app = FastAPI()
@@ -63,6 +64,9 @@ def load_db():
             if 'bot_name' not in bdata: bdata['bot_name'] = ""
             if 'force_join' not in bdata: bdata['force_join'] = ""
             if 'co_admins' not in bdata: bdata['co_admins'] = {}
+            if 'blocked_users' not in bdata: bdata['blocked_users'] = []
+            if 'bad_words' not in bdata: bdata['bad_words'] = []
+            if 'warns' not in bdata: bdata['warns'] = {}
             elif isinstance(bdata['co_admins'], list): 
                 bdata['co_admins'] = {str(k): "بدون نام" for k in bdata['co_admins']}
     return db
@@ -70,7 +74,6 @@ def load_db():
 def save_db(data):
     redis.set("saas_db", json.dumps(data))
 
-# مدیریت وضعیت مکالمات در فضای ابری (جلوگیری از فراموشی سرور)
 def get_state(db, bot_key, user_id):
     key = f"{bot_key}_{user_id}"
     return db.get('_states', {}).get(key, {'state': None, 'data': {}})
@@ -154,9 +157,21 @@ async def child_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if user_id == admin_id or str(user_id) in co_admins:
         role = "مدیر اصلی" if user_id == admin_id else f"ادمین فرعی ({co_admins[str(user_id)]})"
-        msg = f"👨‍💻 **سلام {role} عزیز! به ربات خودت خوش اومدی.**\n\n✅ ربات فعال است و پیام‌ها برای شما فوروارد خواهد شد."
-        if update.message: await update.message.reply_text(msg, parse_mode='Markdown')
-        else: await update.callback_query.edit_message_text(msg, parse_mode='Markdown')
+        msg = (
+            f"👨‍💻 **سلام {role} عزیز! به ربات خودت خوش اومدی.**\n\n"
+            f"✅ ربات فعال است و پیام‌ها برای شما فوروارد خواهد شد.\n\n"
+            f"🛠 **ابزارهای مدیریتی شما:**\n"
+            f"• ارسال پیام همگانی به کاربران ربات\n"
+            f"• سیستم فیلتر کلمات رکیک\n"
+            f"• سیستم اخطار و مسدودسازی هوشمند"
+        )
+        keyboard = [
+            [InlineKeyboardButton("📢 ارسال پیام همگانی به کاربران", callback_data="cadmin_broadcast")],
+            [InlineKeyboardButton("🚫 مدیریت کلمات رکیک", callback_data="cadmin_badwords"),
+             InlineKeyboardButton("⚙️ تنظیمات ربات", callback_data="cadmin_panel")]
+        ]
+        if update.message: await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        else: await update.callback_query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
         return
         
     if is_user_blocked(token, user_id, db):
@@ -199,13 +214,15 @@ async def child_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.answer()
 
+    is_admin = (user_id == admin_id or str(user_id) in co_admins)
+
     if data == "start_anon":
         if is_user_blocked(token, user_id, db):
             await query.message.reply_text("⛔️ شما مسدود شده‌اید.")
             return
             
         force_join = bdata.get('force_join')
-        if force_join and str(user_id) not in co_admins and user_id != admin_id:
+        if force_join and not is_admin:
             try:
                 member = await context.bot.get_chat_member(chat_id=force_join, user_id=user_id)
                 if member.status in ['left', 'kicked']:
@@ -230,8 +247,15 @@ async def child_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not msg_id:
             await query.edit_message_text("❌ خطا! لطفاً مجدداً /start را بزنید.")
             return
+        
         all_admins = list(set([admin_id] + [int(k) for k in co_admins.keys()]))
-        admin_keyboard = [[InlineKeyboardButton("💬 پاسخ دادن", callback_data=f"creply_{user_id}")], [InlineKeyboardButton("🚫 مسدودیت", callback_data=f"cblock_{user_id}")]]
+        warns_count = bdata.get('warns', {}).get(str(user_id), 0)
+        
+        admin_keyboard = [
+            [InlineKeyboardButton("💬 پاسخ دادن", callback_data=f"creply_{user_id}")],
+            [InlineKeyboardButton(f"⚠️ اخطار ({warns_count})", callback_data=f"cwarn_{user_id}"),
+             InlineKeyboardButton("🚫 مسدودیت", callback_data=f"cblock_{user_id}")]
+        ]
         
         success = False
         for ad_id in all_admins:
@@ -248,27 +272,121 @@ async def child_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "cancel_reply":
         set_state(db, bot_id, user_id, None)
-        await query.edit_message_text("❌ پاسخ لغو شد.")
+        await query.edit_message_text("❌ عملیات لغو شد.")
 
     elif data.startswith("cblock_"):
+        if not is_admin: return
         target_anon_id = int(data.split('_')[1])
         block_user_in_db(token, target_anon_id)
         try: await query.edit_message_reply_markup(reply_markup=None)
         except: pass
-        await query.message.reply_text("✅ کاربر مسدود شد.")
+        await query.message.reply_text("✅ کاربر با موفقیت مسدود شد.")
+
+    elif data.startswith("cwarn_"):
+        if not is_admin: return
+        target_anon_id = int(data.split('_')[1])
+        if 'warns' not in bdata: bdata['warns'] = {}
+        curr_warns = bdata['warns'].get(str(target_anon_id), 0) + 1
+        bdata['warns'][str(target_anon_id)] = curr_warns
+        save_db(db)
+        
+        # ارسال هشدار به کاربر
+        try:
+            await context.bot.send_message(
+                chat_id=target_anon_id, 
+                text=f"⚠️ **اخطار از طرف مدیریت!**\nتعداد اخطارهای شما: {curr_warns} از ۳\nلطفاً در ارسال پیام‌ها دقت کنید، در صورت تکرار مسدود خواهید شد.",
+                parse_mode='Markdown'
+            )
+        except: pass
+        
+        if curr_warns >= 3:
+            block_user_in_db(token, target_anon_id)
+            await query.message.reply_text(f"⚠️ کاربر به دلیل رسیدن به ۳ اخطار، به صورت خودکار **مسدود** شد.")
+        else:
+            await query.message.reply_text(f"✅ اخطار شماره {curr_warns} به کاربر ارسال شد.")
 
     elif data.startswith("creply_"):
+        if not is_admin: return
         target_id = int(data.split('_')[1])
         set_state(db, bot_id, user_id, CHILD_ADMIN_REPLY, {'reply_target': target_id})
-        await query.message.reply_text("✍️ پیام خود را بنویسید:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ لغو پاسخ", callback_data="cancel_reply")]]))
+        await query.message.reply_text("✍️ پاسخ خود را به این کاربر بنویسید:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ لغو پاسخ", callback_data="cancel_reply")]]))
+
+    # --- پنل مدیریت ادمین ربات زیرمجموعه ---
+    elif data == "cadmin_broadcast":
+        if not is_admin: return
+        set_state(db, bot_id, user_id, CHILD_WAITING_BROADCAST)
+        await query.edit_message_text("📢 پیام همگانی خود را برای ارسال به تمام کاربران این ربات بفرستید (متن، عکس، ویس و...):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="cancel_reply")]]))
+
+    elif data == "cadmin_badwords":
+        if not is_admin: return
+        words = bdata.get('bad_words', [])
+        words_str = ", ".join([f"`{w}`" for w in words]) if words else "هیچ کلمه‌ای ثبت نشده است."
+        msg = f"🚫 **مدیریت کلمات رکیک و فیلتر اسپم:**\n\nکلمات فعلی:\n{words_str}\n\nبرای **اضافه کردن** یک کلمه جدید، آن را ارسال کنید.\nبرای **پاکسازی کامل لیست** کلمه `پاکسازی` را بفرستید."
+        set_state(db, bot_id, user_id, CHILD_WAITING_BAD_WORD)
+        await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به منو", callback_data="cancel_reply")]]), parse_mode='Markdown')
+
+    elif data == "cadmin_panel":
+        if not is_admin: return
+        await child_start(update, context)
 
 async def child_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     token = context.bot.token
     bot_id = token.split(':')[0]
     db = load_db()
+    uid = get_uid_by_token(token, db)
+    bdata = db.get(uid, {}).get('bots', {}).get(token, {})
+    co_admins = bdata.get('co_admins', {})
+    admin_id = context.bot_data['admin_id']
+    is_admin = (user_id == admin_id or str(user_id) in co_admins)
+    
     st = get_state(db, bot_id, user_id)
     state = st['state']
+
+    if is_admin and state == CHILD_WAITING_BROADCAST:
+        set_state(db, bot_id, user_id, None)
+        success = 0
+        await update.message.reply_text("⏳ در حال ارسال پیام همگانی...")
+        
+        # جمع‌آوری تمام کاربرانی که به این ربات پیام داده‌اند (از طریق لیست مسدودها یا پیام‌ها)
+        # برای سادگی، به همه کسانی که در بات پیام دادند یا در دیتابیس ثبت شدند ارسال می‌کنیم
+        all_chats = [int(uid_key) for uid_key in bdata.get('warns', {}).keys()]
+        # همچنین کاربرانی که مسدود هستند را هم در نظر می‌گیریم
+        for b_uid in bdata.get('blocked_users', []):
+            if b_uid not in all_chats: all_chats.append(b_uid)
+            
+        for target_u in all_chats:
+            try:
+                await update.message.copy(chat_id=target_u)
+                success += 1
+            except: pass
+        await update.message.reply_text(f"✅ پیام همگانی با موفقیت به {success} کاربر ارسال شد.")
+        return
+
+    if is_admin and state == CHILD_WAITING_BAD_WORD:
+        text = (update.message.text or "").strip()
+        set_state(db, bot_id, user_id, None)
+        if text == "پاکسازی":
+            bdata['bad_words'] = []
+            save_db(db)
+            await update.message.reply_text("✅ لیست کلمات مسدود پاکسازی شد.")
+            return
+        if text:
+            if 'bad_words' not in bdata: bdata['bad_words'] = []
+            if text not in bdata['bad_words']:
+                bdata['bad_words'].append(text)
+                save_db(db)
+            await update.message.reply_text(f"✅ کلمه `{text}` به لیست فیلتر اضافه شد.", parse_mode='Markdown')
+        return
+
+    if not is_admin:
+        # بررسی فیلتر کلمات رکیک برای کاربران عادی
+        bad_words = bdata.get('bad_words', [])
+        if bad_words and update.message.text:
+            msg_text = update.message.text.lower()
+            if any(bw.lower() in msg_text for bw in bad_words):
+                await update.message.reply_text("⛔️ پیام شما به دلیل استفاده از کلمات نامعتبر یا رکیک توسط ربات مسدود شد!")
+                return
 
     if state == CHILD_WAITING_MSG:
         set_state(db, bot_id, user_id, CHILD_WAITING_MSG, {'draft_msg_id': update.message.message_id})
@@ -338,7 +456,7 @@ async def handle_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYP
             "📚 **راهنمای جامع پلتفرم ربات‌ساز پیام ناشناس**\n\n"
             "به سیستم هوشمند ساخت و مدیریت ربات‌های پیام ناشناس خوش آمدید! با این پنل می‌توانید ربات اختصاصی خود را با امکانات پیشرفته مدیریت کنید.\n\n"
             "🛒 **۱. تهیه اشتراک:**\n"
-            "برای شروع، از منوی اصلی روی «خرید اشتراک جدید» کلیک کنید. شما می‌توانید از **پلن 7 روزه رایگان** (فقط برای یک‌بار) استفاده کنید و یا پلن‌های 1 تا 3 ماهه را با پرداخت کارت‌به‌کارت خریداری کنید.\n\n"
+            "برای شروع، از منوی اصلی روی «خرید اشتراک جدید» کلیک کنید. شما می‌توانید از **پلن ۷ روزه رایگان** (فقط برای یک‌بار) استفاده کنید و یا پلن‌های ۱ تا ۳ ماهه را با پرداخت کارت‌به‌کارت خریداری کنید.\n\n"
             "🔑 **۲. راه‌اندازی ربات:**\n"
             "پس از فعال شدن اشتراک، روی «راه‌اندازی ربات از اشتراک» کلیک کنید:\n"
             "🔹 ابتدا توکن ربات خود را (که از @BotFather دریافت کرده‌اید) بفرستید.\n"
@@ -348,7 +466,9 @@ async def handle_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYP
             "🔒 **قفل عضویت اجباری:** آیدی کانال خود را (با @) ثبت کنید تا کاربران قبل از ارسال پیام، مجبور به عضویت در کانال شما شوند. *(⚠️ ربات حتماً باید در کانال شما ادمین باشد)*.\n"
             "👥 **ادمین‌های فرعی:** می‌توانید آیدی دوستان یا همکارانتان را ثبت کنید تا پیام‌های ناشناس برای آن‌ها هم ارسال شود و بتوانند پاسخ دهند.\n"
             "✍️ **نام نمایشی:** یک اسم دلخواه برای ربات خود تعیین کنید تا پیام خوش‌آمدگویی جذاب‌تر شود.\n"
-            "🔴/🟢 **روشن/خاموش:** هر زمان که خواستید دریافت پیام ناشناس را موقتاً متوقف کنید.\n\n"
+            "🔴/🟢 **روشن/خاموش:** هر زمان که خواستید دریافت پیام ناشناس را موقتاً متوقف کنید.\n"
+            "🚫 **فیلتر کلمات رکیک:** از داخل ربات خودتان کلمات بد را فیلتر کنید.\n"
+            "⚠️ **سیستم اخطار (Warn):** کاربران مزاحم را اخطار دهید یا مسدود کنید.\n\n"
             "💬 **۴. چت دوطرفه و بلاک (ضد اسپم):**\n"
             "هر پیامی که در ربات دریافت می‌کنید، دارای دکمه‌های شیشه‌ای است:\n"
             "🔸 با زدن **«💬 پاسخ دادن»**، می‌توانید مستقیماً و به صورت ناشناس جواب شخص را بدهید.\n"
@@ -395,7 +515,7 @@ async def handle_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYP
         if target_uid not in db: db[target_uid] = {'credits': [], 'bots': {}, 'used_free_trial': False}
         db[target_uid]['credits'].append(30)
         save_db(db)
-        await query.edit_message_text(f"✅ یک اشتراک 30 روزه به کاربر `{target_uid}` اضافه شد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")]]), parse_mode='Markdown')
+        await query.edit_message_text(f"✅ یک اشتراک ۳۰ روزه به کاربر `{target_uid}` اضافه شد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")]]), parse_mode='Markdown')
 
     elif data.startswith("admb_"):
         if int(user_id) != ADMIN_ID: return
@@ -472,7 +592,7 @@ async def handle_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYP
             await query.edit_message_text("❌ شما هیچ اشتراک استفاده نشده‌ای ندارید.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")]]))
             return
         set_state(db, "main", user_id, WAITING_TOKEN)
-        await query.edit_message_text("🔑 **مرحله 1:** لطفاً توکن ربات جدید را ارسال کنید:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ لغو", callback_data="cancel_flow")]]), parse_mode='Markdown')
+        await query.edit_message_text("🔑 **مرحله ۱:** لطفاً توکن ربات جدید را ارسال کنید:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ لغو", callback_data="cancel_flow")]]), parse_mode='Markdown')
 
     elif data == "user_bots":
         bots = db.get(user_id, {}).get('bots', {})
@@ -542,7 +662,7 @@ async def handle_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYP
         set_state(db, "main", user_id, WAITING_NEW_ADMIN_ID, {'edit_bid': b_id})
         await query.edit_message_text("👤 لطفاً شناسه عددی جدید مدیر اصلی را بفرستید:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ لغو", callback_data=f"mybot_{b_id}")]]))
 
-    # --- تایید یا رد فیش‌های واریزی (خرید جدید و تمدید) ---
+    # --- تایید یا رد فیش‌های واریزی ---
     elif data.startswith("approve_new_") or data.startswith("reject_new_"):
         if int(user_id) != ADMIN_ID: return
         parts = data.split('_')
@@ -637,7 +757,7 @@ async def main_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db[user_id]['bots'][token] = {
             'admin_id': admin_id_child, 'expiry_date': (datetime.now() + timedelta(days=days)).isoformat(),
             'warned': False, 'admin_disabled': False, 'user_disabled': False, 'blocked_users': [],
-            'bot_name': "", 'co_admins': {}, 'force_join': ""
+            'bot_name': "", 'co_admins': {}, 'force_join': "", 'bad_words': [], 'warns': {}
         }
         set_state(db, "main", user_id, None)
         await sync_bot_state(user_id, token, db)
@@ -724,7 +844,7 @@ async def main_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         udata = db[target_uid]
         msg = f"👤 **مدیریت کاربر:** `{target_uid}`\nاعتبارهای استفاده نشده: {len(udata.get('credits', []))}\nتعداد ربات‌ها: {len(udata.get('bots', {}))}"
-        keyboard = [[InlineKeyboardButton("➕ افزودن 1 اشتراک 30 روزه", callback_data=f"admaddcred_{target_uid}")]]
+        keyboard = [[InlineKeyboardButton("➕ افزودن ۱ اشتراک ۳۰ روزه", callback_data=f"admaddcred_{target_uid}")]]
         for t, bdata in udata.get('bots', {}).items():
             bid = t.split(':')[0]
             st_icon = "⛔️" if bdata.get('admin_disabled') else "✅"
