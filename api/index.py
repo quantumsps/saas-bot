@@ -29,7 +29,8 @@ PLANS = {
 (WAITING_RECEIPT, WAITING_TOKEN, WAITING_ADMIN_ID, 
  WAITING_MANAGE_USER, WAITING_ADMIN_DAYS, WAITING_NEW_ADMIN_ID,
  WAITING_BOT_NAME, WAITING_CO_ADMIN, WAITING_CO_ADMIN_NAME, 
- WAITING_BROADCAST, WAITING_FORCE_JOIN) = range(1, 12)
+ WAITING_BROADCAST, WAITING_FORCE_JOIN,
+ WAITING_SINGLE_USER_ID, WAITING_SINGLE_USER_TEXT) = range(1, 14)
 
 # وضعیت‌های ربات‌های مشتری
 (CHILD_WAITING_MSG, CHILD_ADMIN_REPLY, CHILD_WAITING_BROADCAST, 
@@ -58,6 +59,7 @@ def load_db():
         if 'used_free_trial' not in udata: udata['used_free_trial'] = False
         if 'bots' not in udata: db[uid]['bots'] = {}
         if 'credits' not in udata: db[uid]['credits'] = []
+        if 'username' not in udata: udata['username'] = "ندارد"
         elif isinstance(udata['credits'], int): db[uid]['credits'] = [30] * udata['credits']
         
         for t, bdata in udata.get('bots', {}).items():
@@ -324,7 +326,6 @@ async def child_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         set_state(db, bot_id, user_id, CHILD_ADMIN_REPLY, {'reply_target': target_id})
         await query.message.reply_text("✍️ پاسخ خود را به این کاربر بنویسید:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ لغو پاسخ", callback_data="cancel_reply")]]))
 
-    # --- پنل مدیریت ادمین ربات زیرمجموعه ---
     elif data == "cadmin_broadcast":
         if not is_admin: return
         set_state(db, bot_id, user_id, CHILD_WAITING_BROADCAST)
@@ -364,7 +365,6 @@ async def child_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         success = 0
         await update.message.reply_text("⏳ در حال ارسال پیام همگانی...")
         
-        # استخراج دقیق تمام کاربرانی که تاکنون با ربات تعامل داشته‌اند
         all_chats = set(bdata.get('known_users', []))
         for w_uid in bdata.get('warns', {}).keys():
             all_chats.add(int(w_uid))
@@ -423,21 +423,27 @@ async def child_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ربات اصلی (پنل مرکزی)
 # ==========================================
 async def main_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    user = update.effective_user
+    user_id = user.id
     db = load_db()
     
     if str(user_id) not in db:
-        db[str(user_id)] = {'credits': [], 'bots': {}, 'used_free_trial': False}
+        db[str(user_id)] = {'credits': [], 'bots': {}, 'used_free_trial': False, 'username': user.username or "ندارد"}
         save_db(db)
+    else:
+        if user.username:
+            db[str(user_id)]['username'] = user.username
+            save_db(db)
         
     set_state(db, "main", user_id, None)
         
     if user_id == ADMIN_ID:
         sales_status = "🟢 باز" if db['global'].get('sales_open', True) else "🔴 بسته"
-        msg = "👨‍💻 **پنل مدیریت ربات‌ساز**\n\nیکی از گزینه‌های زیر را انتخاب کنید:"
+        msg = "👨‍💻 **پنل مدیریت ربات‌ساز (مدیر کل)**\n\nیکی از گزینه‌های زیر را انتخاب کنید:"
         keyboard = [
             [InlineKeyboardButton("👥 لیست و وضعیت کاربران", callback_data="admin_users_list")],
             [InlineKeyboardButton("⚙️ مدیریت کاربران", callback_data="admin_manage_user")],
+            [InlineKeyboardButton("📨 ارسال پیام تکی به کاربر", callback_data="admin_single_msg")],
             [InlineKeyboardButton("📢 ارسال پیام همگانی", callback_data="admin_broadcast")],
             [InlineKeyboardButton(f"🛒 وضعیت فروش: {sales_status}", callback_data="admin_toggle_sales")]
         ]
@@ -508,31 +514,59 @@ async def handle_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYP
         set_state(db, "main", user_id, WAITING_BROADCAST)
         await query.edit_message_text("📢 لطفاً پیام همگانی خود را بفرستید (متن یا مدیا):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ لغو", callback_data="cancel_flow")]]))
 
+    elif data == "admin_single_msg":
+        if int(user_id) != ADMIN_ID: return
+        set_state(db, "main", user_id, WAITING_SINGLE_USER_ID)
+        await query.edit_message_text("👤 لطفاً **شناسه عددی (User ID)** کاربری که می‌خواهید به او پیام بفرستید را وارد کنید:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ لغو", callback_data="cancel_flow")]]))
+
+    elif data == "admin_send_single_confirm":
+        if int(user_id) != ADMIN_ID: return
+        st = get_state(db, "main", user_id)
+        sdata = st['data']
+        t_id = sdata.get('target_user_id')
+        msg_text = sdata.get('msg_text')
+        set_state(db, "main", user_id, None)
+        try:
+            await context.bot.send_message(chat_id=t_id, text=f"📬 **پیام از طرف مدیریت:**\n\n{msg_text}", parse_mode='Markdown')
+            await query.edit_message_text("✅ پیام با موفقیت به کاربر ارسال شد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به پنل", callback_data="cancel_flow")]]))
+        except Exception as e:
+            await query.edit_message_text(f"❌ خطا در ارسال پیام به کاربر:\n{e}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به پنل", callback_data="cancel_flow")]]))
+
+    elif data == "admin_change_single_text":
+        if int(user_id) != ADMIN_ID: return
+        set_state(db, "main", user_id, WAITING_SINGLE_USER_TEXT, get_state(db, "main", user_id)['data'])
+        await query.edit_message_text("✍️ لطفاً **متن جدید** پیام خود را بنویسید و بفرستید:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ لغو", callback_data="cancel_flow")]]))
+
     elif data == "admin_users_list":
         if int(user_id) != ADMIN_ID: return
-        users = [k for k in db.keys() if k not in ['global', '_states']]
-        total_bots = sum(len(db[u].get('bots', {})) for u in users if isinstance(db[u], dict))
-        msg = f"👥 **آمار کلی سیستم:**\nتعداد کل کاربران: {len(users)}\nتعداد کل ربات‌ها: {total_bots}\n\n📋 **لیست آخرین کاربران:**\n"
-        for u in users[-20:]:
-            b_cnt = len(db[u].get('bots', {}))
-            c_cnt = len(db[u].get('credits', []))
-            msg += f"👤 `{u}` | ربات: {b_cnt} | اشتراک: {c_cnt}\n"
+        real_buyers = []
+        for u_key, u_val in db.items():
+            if u_key in ['global', '_states'] or not isinstance(u_val, dict): continue
+            has_bought = len(u_val.get('credits', [])) > 0 or len(u_val.get('bots', {})) > 0
+            if has_bought or int(u_key) == ADMIN_ID:
+                real_buyers.append(u_key)
+                
+        msg = f"👥 **آمار خریداران و مشتریان واقعی:** {len(real_buyers)} نفر\n\n📋 **لیست آخرین خریداران:**\n"
+        for u in real_buyers[-20:]:
+            u_info = db[u]
+            uname = f"@{u_info.get('username', 'ندارد')}" if u_info.get('username') != "ندارد" else "بدون آیدی"
+            b_cnt = len(u_info.get('bots', {}))
+            c_cnt = len(u_info.get('credits', []))
+            msg += f"👤 `{u}` | {uname} | ربات فعال: {b_cnt} | اعتبار: {c_cnt}\n"
         await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")]]), parse_mode='Markdown')
 
     elif data == "admin_manage_user":
         if int(user_id) != ADMIN_ID: return
         set_state(db, "main", user_id, WAITING_MANAGE_USER)
-        await query.edit_message_text("👤 لطفاً شناسه عددی (User ID) کاربر مورد نظر را ارسال کنید:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ لغو", callback_data="cancel_flow")]]))
+        await query.edit_message_text("👤 لطفاً **شناسه عددی (User ID)** یا آیدی کاربر مورد نظر را ارسال کنید:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ لغو", callback_data="cancel_flow")]]))
 
     elif data.startswith("admaddcred_"):
         if int(user_id) != ADMIN_ID: return
         target_uid = data.split('_')[1]
-        if target_uid not in db: db[target_uid] = {'credits': [], 'bots': {}, 'used_free_trial': False}
-        db[target_uid]['credits'].append(30)
-        save_db(db)
-        await query.edit_message_text(f"✅ یک اشتراک ۳۰ روزه به کاربر `{target_uid}` اضافه شد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")]]), parse_mode='Markdown')
+        set_state(db, "main", user_id, WAITING_ADMIN_DAYS, {'target_uid': target_uid})
+        await query.edit_message_text(f"➕ **افزایش اشتراک دستی برای کاربر `{target_uid}`**\n\nلطفاً تعداد روزهای اشتراک را وارد کنید (مثلا عدد ۳۰ یا ۶۰):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ لغو", callback_data="cancel_flow")]]), parse_mode='Markdown')
 
-    elif data.startswith("admb_"):
+    elif data.startswith("admtoggle_"):
         if int(user_id) != ADMIN_ID: return
         _, target_uid, b_id = data.split('_')
         token = get_token_by_id(target_uid, b_id, db)
@@ -541,8 +575,8 @@ async def handle_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYP
             db[target_uid]['bots'][token]['admin_disabled'] = not curr
             save_db(db)
             await sync_bot_state(target_uid, token, db)
-            status_txt = "مسدود (خاموش)" if not curr else "آزاد (روشن)"
-            await query.edit_message_text(f"✅ وضعیت ربات `{b_id}` به **{status_txt}** تغییر یافت.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")]]), parse_mode='Markdown')
+            status_txt = "غیرفعال (خاموش)" if not curr else "فعال (روشن)"
+            await query.edit_message_text(f"✅ ربات `{b_id}` متعلق به کاربر `{target_uid}` توسط مدیر کل **{status_txt}** شد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")]]), parse_mode='Markdown')
 
     # --- انتخاب پلن‌ها ---
     elif data == "buy_new":
@@ -637,6 +671,7 @@ async def handle_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYP
         
         msg = (
             f"🤖 **ربات:** `{b_id}`\n"
+            f"🔑 **توکن ربات:** `{token}`\n"
             f"⏳ **زمان باقی‌مانده:** {days_left} روز\n\n"
             f"📝 **نام نمایشی ربات:** {bdata.get('bot_name') or 'ثبت نشده'}\n"
             f"🔒 **قفل کانال:** {force_text}\n"
@@ -685,7 +720,7 @@ async def handle_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYP
         
         if parts[0] == "approve":
             days = int(parts[3])
-            if target_uid not in db: db[target_uid] = {'credits': [], 'bots': {}, 'used_free_trial': False}
+            if target_uid not in db: db[target_uid] = {'credits': [], 'bots': {}, 'used_free_trial': False, 'username': 'ندارد'}
             db[target_uid]['credits'].append(days)
             save_db(db)
             try: await context.bot.send_message(chat_id=target_uid, text=f"🎉 **پرداخت تایید شد!**\nشما یک اشتراک {days} روزه دریافت کردید.", parse_mode='Markdown')
@@ -746,7 +781,7 @@ async def main_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         set_state(db, "main", user_id, None)
         keyboard = [[InlineKeyboardButton("✅ تایید", callback_data=cb_approve), InlineKeyboardButton("❌ رد", callback_data=cb_reject)]]
-        await context.bot.send_photo(chat_id=ADMIN_ID, photo=photo_id, caption=f"🧾 **{caption_txt}**\n\n👤 از طرف: `{user.id}`", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        await context.bot.send_photo(chat_id=ADMIN_ID, photo=photo_id, caption=f"🧾 **{caption_txt}**\n\n👤 از طرف: `{user.id}` (@{user.username or 'ندارد'})", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
         await update.message.reply_text("✅ فیش شما ارسال شد و پس از بررسی ادمین فعال می‌گردد.")
 
     elif state == WAITING_TOKEN:
@@ -777,6 +812,33 @@ async def main_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         set_state(db, "main", user_id, None)
         await sync_bot_state(user_id, token, db)
         await update.message.reply_text(f"🚀 **ربات شما ساخته و برای {days} روز روشن شد!**\nهم‌اکنون می‌توانید وارد ربات خود شوید و /start را بزنید.", parse_mode='Markdown')
+
+    elif state == WAITING_SINGLE_USER_ID:
+        if int(user_id) != ADMIN_ID: return
+        t_id_text = (update.message.text or "").strip()
+        if not t_id_text.isdigit():
+            await update.message.reply_text("❌ شناسه عددی باید فقط شامل عدد باشد. مجدداً بفرستید:")
+            return
+        set_state(db, "main", user_id, WAITING_SINGLE_USER_TEXT, {'target_user_id': int(t_id_text)})
+        await update.message.reply_text("✍️ حالا **متن پیامی** که می‌خواهید به این کاربر بفرستید را بنویسید و ارسال کنید:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ لغو", callback_data="cancel_flow")]]))
+
+    elif state == WAITING_SINGLE_USER_TEXT:
+        if int(user_id) != ADMIN_ID: return
+        msg_text = update.message.text
+        set_state(db, "main", user_id, WAITING_SINGLE_USER_TEXT, {'msg_text': msg_text})
+        
+        preview_msg = (
+            f"🔍 **پیش‌نمایش پیام تکی:**\n\n"
+            f"👤 گیرنده (User ID): `{sdata.get('target_user_id')}`\n\n"
+            f"📄 **متن پیام:**\n{msg_text}\n\n"
+            f"آیا می‌خواهید این پیام را ارسال کنید؟"
+        )
+        keyboard = [
+            [InlineKeyboardButton("✅ بله، ارسال شود", callback_data="admin_send_single_confirm")],
+            [InlineKeyboardButton("✏️ تغییر متن", callback_data="admin_change_single_text")],
+            [InlineKeyboardButton("❌ انصراف", callback_data="cancel_flow")]
+        ]
+        await update.message.reply_text(preview_msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
     elif state == WAITING_FORCE_JOIN:
         text = (update.message.text or "").strip()
@@ -848,7 +910,7 @@ async def main_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db[user_id]['bots'][token]['admin_id'] = new_admin_id
         set_state(db, "main", user_id, None)
         if token in apps: apps[token].bot_data['admin_id'] = new_admin_id
-        await update.message.reply_text("✅ شناسه مدیر تغییر یافت.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data=f"mybot_{b_id}")]]))
+        await update.message.reply_text("✅ شناسه مدیر تغییر یافت.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")]]))
 
     elif state == WAITING_MANAGE_USER:
         if int(user_id) != ADMIN_ID: return
@@ -858,14 +920,37 @@ async def main_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ کاربر در دیتابیس یافت نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")]]))
             return
         udata = db[target_uid]
-        msg = f"👤 **مدیریت کاربر:** `{target_uid}`\nاعتبارهای استفاده نشده: {len(udata.get('credits', []))}\nتعداد ربات‌ها: {len(udata.get('bots', {}))}"
-        keyboard = [[InlineKeyboardButton("➕ افزودن ۱ اشتراک ۳۰ روزه", callback_data=f"admaddcred_{target_uid}")]]
+        uname = udata.get('username', 'ندارد')
+        msg = f"👤 **مدیریت کاربر:** `{target_uid}` (آیدی: @{uname})\nاعتبارهای استفاده نشده: {len(udata.get('credits', []))}\nتعداد ربات‌ها: {len(udata.get('bots', {}))}"
+        
+        keyboard = [[InlineKeyboardButton("➕ افزایش دستی اشتراک (روزانه)", callback_data=f"admaddcred_{target_uid}")]];
         for t, bdata in udata.get('bots', {}).items():
             bid = t.split(':')[0]
             st_icon = "⛔️" if bdata.get('admin_disabled') else "✅"
-            keyboard.append([InlineKeyboardButton(f"{st_icon} تغییر وضعیت ربات {bid}", callback_data=f"admb_{target_uid}_{bid}")])
+            keyboard.append([InlineKeyboardButton(f"{st_icon} روشن/خاموش ربات {bid}", callback_data=f"admtoggle_{target_uid}_{bid}")])
+            keyboard.append([InlineKeyboardButton(f"🔑 توکن ربات {bid}", callback_data=f"admtoken_{t[:15]}")])
         keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")])
         await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+    elif state == WAITING_ADMIN_DAYS:
+        if int(user_id) != ADMIN_ID: return
+        txt_days = (update.message.text or "").strip()
+        if not txt_days.isdigit() or int(txt_days) < 1 or int(txt_days) > 100:
+            await update.message.reply_text("❌ لطفاً عددی بین **۱ تا ۱۰۰** وارد کنید:")
+            return
+        days_count = int(txt_days)
+        target_uid = sdata.get('target_uid')
+        set_state(db, "main", user_id, None)
+        
+        if target_uid not in db: db[target_uid] = {'credits': [], 'bots': {}, 'used_free_trial': False, 'username': 'ندارد'}
+        db[target_uid]['credits'].append(days_count)
+        save_db(db)
+        
+        try:
+            await context.bot.send_message(chat_id=target_uid, text=f"🎁 مدیر کل یک اشتراک **{days_count} روزه** به حساب شما اضافه کرد!", parse_mode='Markdown')
+        except: pass
+        
+        await update.message.reply_text(f"✅ اشتراک {days_count} روزه با موفقیت به کاربر `{target_uid}` اضافه شد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به پنل", callback_data="cancel_flow")]]), parse_mode='Markdown')
 
 # ==========================================
 # مدیریت وب‌هوک‌ها در ورسل (FastAPI)
