@@ -558,25 +558,86 @@ async def handle_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYP
     elif data == "admin_manage_user":
         if int(user_id) != ADMIN_ID: return
         set_state(db, "main", user_id, WAITING_MANAGE_USER)
-        await query.edit_message_text("👤 لطفاً **شناسه عددی (User ID)** یا آیدی کاربر مورد نظر را ارسال کنید:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ لغو", callback_data="cancel_flow")]]))
+        await query.edit_message_text("👤 لطفاً **شناسه عددی (User ID)** کاربر مورد نظر را ارسال کنید:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ لغو", callback_data="cancel_flow")]]))
+
+    elif data.startswith("adm_bot_"):
+        if int(user_id) != ADMIN_ID: return
+        _, _, target_uid, b_id = data.split('_')
+        token = get_token_by_id(target_uid, b_id, db)
+        if not token: return
+        bdata = db[target_uid]['bots'][token]
+        days_left = max(0, (datetime.fromisoformat(bdata['expiry_date']) - datetime.now()).days)
+        running = is_bot_running(bdata)
+        
+        msg = (
+            f"🤖 **مدیریت ربات `{b_id}` متعلق به کاربر `{target_uid}`**\n\n"
+            f"⏳ زمان باقی‌مانده: {days_left} روز\n"
+            f"وضعیت سرور: {'فعال 🟢' if running else 'غیرفعال 🔴'}\n"
+            f"مسدودیت ادمین کل: {'⛔️ مسدود' if bdata.get('admin_disabled') else '✅ آزاد'}"
+        )
+        keyboard = [
+            [InlineKeyboardButton("➕/➖ کاهش یا افزایش اشتراک", callback_data=f"admaddcred_{target_uid}_{b_id}")],
+            [InlineKeyboardButton(f"{'🔴 غیرفعال کردن ربات' if running else '🟢 فعال کردن ربات'}", callback_data=f"admtoggle_{target_uid}_{b_id}")],
+            [InlineKeyboardButton("🔑 دریافت توکن ربات", callback_data=f"admtoken_{target_uid}_{b_id}")],
+            [InlineKeyboardButton("🔙 بازگشت به لیست ربات‌ها", callback_data=f"admbackbots_{target_uid}")]
+        ]
+        await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+    elif data.startswith("admtoken_"):
+        if int(user_id) != ADMIN_ID: return
+        _, target_uid, b_id = data.split('_')
+        token = get_token_by_id(target_uid, b_id, db)
+        if token:
+            await query.message.reply_text(f"🔑 توکن ربات `{b_id}`:\n\n`{token}`\n\n*(برای کپی کردن روی توکن ضربه بزنید)*", parse_mode='Markdown')
+            await query.answer()
+
+    elif data.startswith("admbackbots_"):
+        if int(user_id) != ADMIN_ID: return
+        target_uid = data.split('_')[1]
+        udata = db.get(target_uid, {})
+        bots = udata.get('bots', {})
+        if not bots:
+            await query.edit_message_text("❌ این کاربر هیچ رباتی ندارد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")]]))
+            return
+        keyboard = [[InlineKeyboardButton(f"🤖 ربات {t.split(':')[0]}", callback_data=f"adm_bot_{target_uid}_{t.split(':')[0]}")] for t in bots.keys()]
+        keyboard.append([InlineKeyboardButton("🔙 بازگشت به پنل", callback_data="cancel_flow")])
+        await query.edit_message_text(f"🤖 **ربات‌های کاربر `{target_uid}` را انتخاب کنید:**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
     elif data.startswith("admaddcred_"):
         if int(user_id) != ADMIN_ID: return
-        target_uid = data.split('_')[1]
-        set_state(db, "main", user_id, WAITING_ADMIN_DAYS, {'target_uid': target_uid})
-        await query.edit_message_text(f"➕ **افزایش اشتراک دستی برای کاربر `{target_uid}`**\n\nلطفاً تعداد روزهای اشتراک را وارد کنید (مثلا عدد ۳۰ یا ۶۰):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ لغو", callback_data="cancel_flow")]]), parse_mode='Markdown')
+        parts = data.split('_')
+        target_uid = parts[1]
+        b_id = parts[2] if len(parts) > 2 else ""
+        set_state(db, "main", user_id, WAITING_ADMIN_DAYS, {'target_uid': target_uid, 'target_bid': b_id})
+        await query.edit_message_text(f"➕/➖ **تغییر اشتراک ربات `{b_id}` برای کاربر `{target_uid}`**\n\nتعداد روزهای مورد نظر را وارد کنید (برای افزایش عدد مثبت مثلاً `30` و برای کاهش عدد منفی مثلاً `-10` بفرستید):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ لغو", callback_data=f"adm_bot_{target_uid}_{b_id}")]]), parse_mode='Markdown')
 
     elif data.startswith("admtoggle_"):
         if int(user_id) != ADMIN_ID: return
         _, target_uid, b_id = data.split('_')
         token = get_token_by_id(target_uid, b_id, db)
         if token:
-            curr = db[target_uid]['bots'][token].get('admin_disabled', False)
-            db[target_uid]['bots'][token]['admin_disabled'] = not curr
+            bdata = db[target_uid]['bots'][token]
+            curr = bdata.get('admin_disabled', False)
+            bdata['admin_disabled'] = not curr
             save_db(db)
             await sync_bot_state(target_uid, token, db)
-            status_txt = "غیرفعال (خاموش)" if not curr else "فعال (روشن)"
-            await query.edit_message_text(f"✅ ربات `{b_id}` متعلق به کاربر `{target_uid}` توسط مدیر کل **{status_txt}** شد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")]]), parse_mode='Markdown')
+            
+            running = is_bot_running(bdata)
+            days_left = max(0, (datetime.fromisoformat(bdata['expiry_date']) - datetime.now()).days)
+            
+            msg = (
+                f"🤖 **مدیریت ربات `{b_id}` متعلق به کاربر `{target_uid}`**\n\n"
+                f"⏳ زمان باقی‌مانده: {days_left} روز\n"
+                f"وضعیت سرور: {'فعال 🟢' if running else 'غیرفعال 🔴'}\n"
+                f"مسدودیت ادمین کل: {'⛔️ مسدود' if bdata.get('admin_disabled') else '✅ آزاد'}"
+            )
+            keyboard = [
+                [InlineKeyboardButton("➕/➖ کاهش یا افزایش اشتراک", callback_data=f"admaddcred_{target_uid}_{b_id}")],
+                [InlineKeyboardButton(f"{'🔴 غیرفعال کردن ربات' if running else '🟢 فعال کردن ربات'}", callback_data=f"admtoggle_{target_uid}_{b_id}")],
+                [InlineKeyboardButton("🔑 دریافت توکن ربات", callback_data=f"admtoken_{target_uid}_{b_id}")],
+                [InlineKeyboardButton("🔙 بازگشت به لیست ربات‌ها", callback_data=f"admbackbots_{target_uid}")]
+            ]
+            await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
     # --- انتخاب پلن‌ها ---
     elif data == "buy_new":
@@ -910,7 +971,7 @@ async def main_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db[user_id]['bots'][token]['admin_id'] = new_admin_id
         set_state(db, "main", user_id, None)
         if token in apps: apps[token].bot_data['admin_id'] = new_admin_id
-        await update.message.reply_text("✅ شناسه مدیر تغییر یافت.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")]]))
+        await update.message.reply_text("✅ شناسه مدیر تغییر یافت.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data=f"mybot_{b_id}")]]))
 
     elif state == WAITING_MANAGE_USER:
         if int(user_id) != ADMIN_ID: return
@@ -919,38 +980,42 @@ async def main_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if target_uid not in db or target_uid in ['global', '_states']:
             await update.message.reply_text("❌ کاربر در دیتابیس یافت نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")]]))
             return
-        udata = db[target_uid]
-        uname = udata.get('username', 'ندارد')
-        msg = f"👤 **مدیریت کاربر:** `{target_uid}` (آیدی: @{uname})\nاعتبارهای استفاده نشده: {len(udata.get('credits', []))}\nتعداد ربات‌ها: {len(udata.get('bots', {}))}"
         
-        keyboard = [[InlineKeyboardButton("➕ افزایش دستی اشتراک (روزانه)", callback_data=f"admaddcred_{target_uid}")]];
-        for t, bdata in udata.get('bots', {}).items():
-            bid = t.split(':')[0]
-            st_icon = "⛔️" if bdata.get('admin_disabled') else "✅"
-            keyboard.append([InlineKeyboardButton(f"{st_icon} روشن/خاموش ربات {bid}", callback_data=f"admtoggle_{target_uid}_{bid}")])
-            keyboard.append([InlineKeyboardButton(f"🔑 توکن ربات {bid}", callback_data=f"admtoken_{t[:15]}")])
-        keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")])
-        await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        udata = db[target_uid]
+        bots = udata.get('bots', {})
+        if not bots:
+            await update.message.reply_text(f"❌ کاربر `{target_uid}` هیچ رباتی نساخته است.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به پنل", callback_data="cancel_flow")]]), parse_mode='Markdown')
+            return
+            
+        keyboard = [[InlineKeyboardButton(f"🤖 ربات {t.split(':')[0]}", callback_data=f"adm_bot_{target_uid}_{t.split(':')[0]}")] for t in bots.keys()]
+        keyboard.append([InlineKeyboardButton("🔙 بازگشت به پنل", callback_data="cancel_flow")])
+        await update.message.reply_text(f"👤 کاربر مورد نظر یافت شد. لطفاً **ربات مورد نظر** را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
     elif state == WAITING_ADMIN_DAYS:
         if int(user_id) != ADMIN_ID: return
         txt_days = (update.message.text or "").strip()
-        if not txt_days.isdigit() or int(txt_days) < 1 or int(txt_days) > 100:
-            await update.message.reply_text("❌ لطفاً عددی بین **۱ تا ۱۰۰** وارد کنید:")
+        try:
+            days_change = int(txt_days)
+        except ValueError:
+            await update.message.reply_text("❌ لطفاً یک عدد معتبر وارد کنید (مثلا 30 یا -10):")
             return
-        days_count = int(txt_days)
+            
         target_uid = sdata.get('target_uid')
+        target_bid = sdata.get('target_bid')
         set_state(db, "main", user_id, None)
         
-        if target_uid not in db: db[target_uid] = {'credits': [], 'bots': {}, 'used_free_trial': False, 'username': 'ندارد'}
-        db[target_uid]['credits'].append(days_count)
-        save_db(db)
-        
-        try:
-            await context.bot.send_message(chat_id=target_uid, text=f"🎁 مدیر کل یک اشتراک **{days_count} روزه** به حساب شما اضافه کرد!", parse_mode='Markdown')
-        except: pass
-        
-        await update.message.reply_text(f"✅ اشتراک {days_count} روزه با موفقیت به کاربر `{target_uid}` اضافه شد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به پنل", callback_data="cancel_flow")]]), parse_mode='Markdown')
+        token = get_token_by_id(target_uid, target_bid, db)
+        if token and target_uid in db and token in db[target_uid]['bots']:
+            curr_exp = datetime.fromisoformat(db[target_uid]['bots'][token]['expiry_date'])
+            base_time = curr_exp if curr_exp > datetime.now() else datetime.now()
+            new_exp = base_time + timedelta(days=days_change)
+            db[target_uid]['bots'][token]['expiry_date'] = new_exp.isoformat()
+            save_db(db)
+            await sync_bot_state(target_uid, token, db)
+            
+            await update.message.reply_text(f"✅ تاریخ انقضای ربات `{target_bid}` با موفقیت به میزان {days_change} روز تغییر یافت.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به تنظیمات ربات", callback_data=f"adm_bot_{target_uid}_{target_bid}")]]), parse_mode='Markdown')
+        else:
+            await update.message.reply_text("❌ خطا در پیدا کردن ربات کاربر.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به پنل", callback_data="cancel_flow")]]))
 
 # ==========================================
 # مدیریت وب‌هوک‌ها در ورسل (FastAPI)
