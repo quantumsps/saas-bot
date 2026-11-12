@@ -449,9 +449,9 @@ async def handle_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYP
     elif data.startswith("renew_"):
         b_id = data.split('_')[1]
         keyboard = [
-            [InlineKeyboardButton("1 ماهه - 100 هزار تومان", callback_data=f"buyplan_ren_30_{b_id}")],
-            [InlineKeyboardButton("2 ماهه - 180 هزار تومان", callback_data=f"buyplan_ren_60_{b_id}")],
-            [InlineKeyboardButton("3 ماهه - 270 هزار تومان", callback_data=f"buyplan_ren_90_{b_id}")],
+            [InlineKeyboardButton("1 ماهه - 50 هزار تومان", callback_data=f"buyplan_ren_30_{b_id}")],
+            [InlineKeyboardButton("2 ماهه - 80 هزار تومان", callback_data=f"buyplan_ren_60_{b_id}")],
+            [InlineKeyboardButton("3 ماهه - 120 هزار تومان", callback_data=f"buyplan_ren_90_{b_id}")],
             [InlineKeyboardButton("❌ انصراف", callback_data="cancel_flow")]
         ]
         await query.edit_message_text(f"🛒 **پلن تمدید ربات `{b_id}` را انتخاب کنید:**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
