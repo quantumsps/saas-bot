@@ -439,7 +439,7 @@ async def main_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     if user_id == ADMIN_ID:
         sales_status = "🟢 باز" if db['global'].get('sales_open', True) else "🔴 بسته"
-        msg = "👨‍💻 **پنل مدیریت ربات‌ساز (مدیر کل)**\n\nیکی از گزینه‌های زیر را انتخاب کنید:"
+        msg = "👨‍💻 <b>پنل مدیریت ربات‌ساز (مدیر کل)</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:"
         keyboard = [
             [InlineKeyboardButton("👥 لیست و وضعیت کاربران", callback_data="admin_users_list")],
             [InlineKeyboardButton("⚙️ مدیریت کاربران", callback_data="admin_manage_user")],
@@ -449,7 +449,7 @@ async def main_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     else:
         credits_count = len(db.get(str(user_id), {}).get('credits', []))
-        msg = f"🤖 **به پلتفرم ربات‌ساز ناشناس خوش آمدید!**\n\nتعداد اشتراک‌های استفاده نشده: {credits_count}\nاز دکمه‌های زیر استفاده کنید:"
+        msg = f"<tg-emoji emoji-id=\"5255883984151276991\">🤖</tg-emoji> <b>به پلتفرم ربات‌ساز ناشناس خوش آمدید!</b>\n\nتعداد اشتراک‌های استفاده نشده: {credits_count}\nاز دکمه‌های زیر استفاده کنید:"
         keyboard = [
             [InlineKeyboardButton("🛒 خرید اشتراک جدید", callback_data="buy_new")],
             [InlineKeyboardButton("🔑 راه‌اندازی ربات از اشتراک", callback_data="set_bot")],
@@ -458,8 +458,8 @@ async def main_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         
     reply_markup = InlineKeyboardMarkup(keyboard)
-    if update.message: await update.message.reply_text(msg, reply_markup=reply_markup, parse_mode='Markdown')
-    elif update.callback_query: await update.callback_query.edit_message_text(msg, reply_markup=reply_markup, parse_mode='Markdown')
+    if update.message: await update.message.reply_text(msg, reply_markup=reply_markup, parse_mode='HTML')
+    elif update.callback_query: await update.callback_query.edit_message_text(msg, reply_markup=reply_markup, parse_mode='HTML')
 
 async def handle_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -712,7 +712,7 @@ async def handle_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYP
             
         keyboard = [[InlineKeyboardButton(f"{'🟢' if is_bot_running(bdata) else '🔴'} ربات {t.split(':')[0]}", callback_data=f"mybot_{t.split(':')[0]}")] for t, bdata in bots.items()]
         keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")])
-        await query.edit_message_text("🤖 **یکی از ربات‌های خود را انتخاب کنید:**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        await query.edit_message_text("<tg-emoji emoji-id=\"5255883984151276991\">🤖</tg-emoji> <b>یکی از ربات‌های خود را انتخاب کنید:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
     elif data.startswith("mybot_") or data.startswith("utoggle_"):
         b_id = data.split('_')[1]
@@ -752,7 +752,7 @@ async def handle_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYP
     elif data.startswith("forcejoin_"):
         b_id = data.split('_')[1]
         set_state(db, "main", user_id, WAITING_FORCE_JOIN, {'edit_bid': b_id})
-        msg = "🔒 **تنظیم قفل عضویت اجباری:**\n\nبرای تنظیم قفل، آیدی کانال خود را با @ بفرستید (مثال: `@MyChannel`).\n\n⚠️ **نکته بسیار مهم:** حتماً باید ربات خود را در کانالتان ادمین کنید، در غیر این صورت قفل عمل نخواهد کرد.\n\nبرای غیرفعال کردن قفل، کلمه `لغو` را بفرستید."
+        msg = "🔒 **تنظیم قفل عضویت اجباری:**\n\nبرای تنظیم قفل، آیدی کانال خود را با @ بفرستید (مثال: `@MyChannel`).\n\n⚠️ **نکته بسیار مهم:** حتماً باید ربات خود را در کانالتان ادمین کنید، در غیر این صورت قفل عمل خواهد کرد.\n\nبرای غیرفعال کردن قفل، کلمه `لغو` را بفرستید."
         await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data=f"mybot_{b_id}")]]), parse_mode='Markdown')
 
     elif data.startswith("setname_"):
