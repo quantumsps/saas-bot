@@ -171,9 +171,9 @@ async def child_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id == admin_id or str(user_id) in co_admins:
         role = "مدیر اصلی" if user_id == admin_id else f"ادمین فرعی ({co_admins[str(user_id)]})"
         msg = (
-            f"👨‍💻 **سلام {role} عزیز! به ربات خودت خوش اومدی.**\n\n"
-            f"✅ ربات فعال است و پیام‌ها برای شما فوروارد خواهد شد.\n\n"
-            f"🛠 **ابزارهای مدیریتی شما:**\n"
+            f"<tg-emoji emoji-id=\"5818813162815753343\">👨‍💻</tg-emoji> <b>سلام {role} عزیز! به ربات خودت خوش اومدی.</b>\n\n"
+            f"<tg-emoji emoji-id=\"5852871561983299073\">✅</tg-emoji> ربات فعال است و پیام‌ها برای شما فوروارد خواهد شد.\n\n"
+            f"<tg-emoji emoji-id=\"5462921117423384478\">🛠</tg-emoji> <b>ابزارهای مدیریتی شما:</b>\n"
             f"• ارسال پیام همگانی به کاربران ربات\n"
             f"• سیستم فیلتر کلمات رکیک\n"
             f"• سیستم اخطار و مسدودسازی هوشمند"
@@ -183,8 +183,8 @@ async def child_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🚫 مدیریت کلمات رکیک", callback_data="cadmin_badwords"),
              InlineKeyboardButton("⚙️ تنظیمات ربات", callback_data="cadmin_panel")]
         ]
-        if update.message: await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-        else: await update.callback_query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        if update.message: await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        else: await update.callback_query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         return
         
     if is_user_blocked(token, user_id, db):
