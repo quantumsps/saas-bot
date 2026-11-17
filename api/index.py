@@ -1448,6 +1448,13 @@ def webhook_handler(token):
     asyncio.run(process_update_async(token, bot_type, admin_id, update_dict))
     return "OK", 200
 
+@flask_app.route('/setup', methods=['GET'])
+def setup_webhook():
+    # این دستور به تلگرام می‌فهماند که ربات را به ورسل وصل کند
+    webhook_url = f"https://{VERCEL_DOMAIN}/webhook/{MAIN_BOT_TOKEN}"
+    res = requests.get(f"https://api.telegram.org/bot{MAIN_BOT_TOKEN}/setWebhook?url={webhook_url}")
+    return res.json()
+
 @flask_app.route('/', methods=['GET'])
 def index():
     return "SaaS Bot Platform is running perfectly on Vercel!"
