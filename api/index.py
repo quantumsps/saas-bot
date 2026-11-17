@@ -15,18 +15,16 @@ from telegram.error import BadRequest
 # ==========================================
 # ⚙️ تنظیمات اصلی و سراسری
 # ==========================================
-MAIN_BOT_TOKEN = "9018084227:AAFacpqEejBGK71LOO_2BiiX6PHiWJaMed4" # توکن ربات ساز
+MAIN_BOT_TOKEN = "8842980077:AAGZ2bQ_1OC3pESktNy5FI_6M_49UNvNJWE" # توکن ربات ساز
 ADMIN_ID = 8898908182  # آیدی شما (مالک ربات ساز)
-DB_FILE = "saas_database.json"
 
-VERCEL_DOMAIN = "https://saas-bot-uyu8.vercel.app" # ⚠️ آدرس دقیق پروژه ورسل خود را اینجا بگذارید (بدون https)
+# ⚠️ در ورسل فقط پوشه tmp قابل نوشتن است
+DB_FILE = "/tmp/saas_database.json" 
+VERCEL_DOMAIN = "saas-bot-uyu8.vercel.app" 
 
 CARD_NUMBER = "6219861837792000"
 CARD_NAME = "امیر ابراهیمی"
 MAX_BOTS_PER_USER = 5
-
-PLANS_ANON = {30: "100000", 60: "180000", 90: "270000"}
-PLANS_LOTTERY = {30: "150000", 60: "250000", 90: "350000"}
 
 CHANNELS = [{"id": "@quantumvaulte", "link": "https://t.me/quantumvaulte"}]
 WINNER_STICKER_ID = "CAACAgIAAxkBAAE... (آیدی استیکر جایزه)"
@@ -79,8 +77,9 @@ def load_db():
     }
 
 def save_db(data):
-    with open(DB_FILE, 'w') as f:
-        json.dump(data, f, indent=4)
+    try:
+        with open(DB_FILE, 'w') as f: json.dump(data, f, indent=4)
+    except: pass
 
 def get_token_by_id(uid, bot_id, db):
     for t in db.get(uid, {}).get('bots', {}).keys():
@@ -130,7 +129,6 @@ def l_load_data(db_file, bot_data):
                 e_dt = l_data.get("end_dt")
                 bot_data['lottery']["start_dt"] = datetime.fromisoformat(s_dt) if s_dt else None
                 bot_data['lottery']["end_dt"] = datetime.fromisoformat(e_dt) if e_dt else None
-                
                 bot_data['participants'] = {int(k): v for k, v in data.get("participants", {}).items()}
         except: pass
     else:
@@ -427,7 +425,7 @@ async def l_handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bd['lottery']["end_dt"] = end_dt
             bd['participants'].clear()
             bd['admin_states'][user.id] = "IDLE"
-            # ⚠️ JobQueue در محیط سرورلس ورسل به درستی کار نخواهد کرد
+            # ⚠️ در ورسل تایمر اتوماتیک دقیق کار نمی‌کند
             bd['lottery']["status"] = "ACTIVE"
             l_save_data(bd['db_file'], bd) 
             await update.message.reply_text(f"✅ فعال شد!\nپایان: {end_dt}\n(توجه: در سرورلس زمان‌بندی اتوماتیک دقیق نیست)", reply_markup=get_admin_menu())
@@ -625,9 +623,9 @@ async def main_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if member.status in ['left', 'kicked']:
                 link = f"https://t.me/{force_join_global.replace('@', '')}"
                 keyboard = [[InlineKeyboardButton("📢 عضویت در کانال", url=link)], [InlineKeyboardButton("✅ عضو شدم", callback_data="cancel_flow")]]
-                msg = "🛑 **عضویت اجباری!**\n\nبرای استفاده از ربات‌ساز، ابتدا باید در کانال زیر عضو شوید:"
-                if update.message: await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-                elif update.callback_query: await update.callback_query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+                msg = "<tg-emoji emoji-id=\"5938290532991111041\">❌</tg-emoji> <b>عضویت اجباری!</b>\n\nبرای استفاده از ربات‌ساز، ابتدا باید در کانال زیر عضو شوید:"
+                if update.message: await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+                elif update.callback_query: await update.callback_query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
                 return ConversationHandler.END
         except: pass
         
@@ -662,7 +660,7 @@ async def handle_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYP
         await main_start(update, context)
         return ConversationHandler.END
     elif data == "user_help":
-        help_text = "📚 **راهنمای جامع پلتفرم**\n..."
+        help_text = "📚 **راهنمای جامع پلتفرم**\nشما در اینجا می‌توانید هم ربات ناشناس و هم ربات قرعه‌کشی اختصاصی خود را بسازید.\nاز دکمه خرید اشتراک اقدام کنید و سپس با وارد کردن توکن، ربات خود را در کمتر از ۱۰ ثانیه راه‌اندازی کنید."
         await query.edit_message_text(help_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")]]), parse_mode='Markdown')
         return ConversationHandler.END
 
@@ -960,7 +958,12 @@ async def handle_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYP
         for t, bdata in bots.items():
             b_type_name = "ناشناس" if bdata.get('bot_type', 'anon') == 'anon' else "قرعه‌کشی"
             b_username = bdata.get('bot_username', f"{t.split(':')[0]}")
-            keyboard.append([InlineKeyboardButton(f"🤖 {b_username} ({b_type_name})", callback_data=f"mybot_{t.split(':')[0]}")])
+            
+            # در سیستم سرورلس ورسل، اگر انقضا نرسیده باشد و مسدود نباشد، آن را فعال در نظر می‌گیریم
+            is_active = (datetime.now() < datetime.fromisoformat(bdata['expiry_date'])) and not bdata.get('user_disabled') and not bdata.get('admin_disabled')
+            icon = '🟢' if is_active else '🔴'
+            
+            keyboard.append([InlineKeyboardButton(f"{icon} {b_username} ({b_type_name})", callback_data=f"mybot_{t.split(':')[0]}")])
         keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")])
         await query.edit_message_text("<tg-emoji emoji-id=\"5255883984151276991\">🤖</tg-emoji> <b>ربات خود را انتخاب کنید:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         return ConversationHandler.END
@@ -976,7 +979,9 @@ async def handle_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYP
         bdata = db[user_id]['bots'][token]
         bot_type = bdata.get('bot_type', 'anon')
         days_left = (datetime.fromisoformat(bdata['expiry_date']) - datetime.now()).days
-        status_server = "در حال کار <tg-emoji emoji-id=\"6269566961168944843\">🚀</tg-emoji>" if not bdata.get('user_disabled') else "متوقف 🛑"
+        
+        is_active = (datetime.now() < datetime.fromisoformat(bdata['expiry_date'])) and not bdata.get('user_disabled') and not bdata.get('admin_disabled')
+        status_server = "در حال کار <tg-emoji emoji-id=\"6269566961168944843\">🚀</tg-emoji>" if is_active else "متوقف 🛑"
         status_admin = "<tg-emoji emoji-id=\"5852871561983299073\">✅</tg-emoji> آزاد" if not bdata.get('admin_disabled') else "⛔️ مسدود"
         bot_type_str = "<tg-emoji emoji-id=\"5891093751555694829\">🎭</tg-emoji> پیام ناشناس" if bot_type == 'anon' else "🎁 قرعه‌کشی"
         
@@ -1162,7 +1167,7 @@ async def handle_admin_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     save_db(db)
     
-    # 📌 تنظیم Webhook برای ربات جدید در لحظه ساخته شدن
+    # 📌 تنظیم Webhook برای ربات جدید در لحظه ساخته شدن روی ورسل
     webhook_url = f"https://{VERCEL_DOMAIN}/webhook/{token}"
     try:
         requests.get(f"https://api.telegram.org/bot{token}/setWebhook?url={webhook_url}")
@@ -1182,13 +1187,9 @@ async def handle_admin_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_global_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try: new_price = int(update.message.text)
-    except: 
-        await update.message.reply_text("❌ فقط عدد وارد کنید.")
-        return WAITING_GLOBAL_PRICE
+    except: return WAITING_GLOBAL_PRICE
     db = load_db()
-    b_type = context.user_data['edit_price_type']
-    days = context.user_data['edit_price_days']
-    db['global']['prices'][b_type][str(days)] = str(new_price)
+    db['global']['prices'][context.user_data['edit_price_type']][str(context.user_data['edit_price_days'])] = str(new_price)
     save_db(db)
     await update.message.reply_text("✅ قیمت با موفقیت بروزرسانی شد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="store_prices")]]))
     return ConversationHandler.END
@@ -1196,9 +1197,7 @@ async def handle_global_price(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def handle_global_force_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     txt = update.message.text.strip()
     db = load_db()
-    if txt == "لغو": db['global']['force_join'] = ""
-    else:
-        db['global']['force_join'] = txt
+    db['global']['force_join'] = "" if txt == "لغو" else txt
     save_db(db)
     await update.message.reply_text("✅ تنظیم شد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="store_channels")]]))
     return ConversationHandler.END
@@ -1206,9 +1205,7 @@ async def handle_global_force_join(update: Update, context: ContextTypes.DEFAULT
 async def handle_global_log_ch(update: Update, context: ContextTypes.DEFAULT_TYPE):
     txt = update.message.text.strip()
     db = load_db()
-    if txt == "لغو": db['global']['log_channel'] = ""
-    else:
-        db['global']['log_channel'] = txt
+    db['global']['log_channel'] = "" if txt == "لغو" else txt
     save_db(db)
     await update.message.reply_text("✅ تنظیم شد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="store_channels")]]))
     return ConversationHandler.END
@@ -1227,18 +1224,15 @@ async def handle_discount_percent(update: Update, context: ContextTypes.DEFAULT_
 async def handle_discount_uses(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try: limit = int(update.message.text)
     except: return WAITING_DISCOUNT_USES
-    db = load_db()
-    code = context.user_data['new_disc_name']
+    db, code = load_db(), context.user_data['new_disc_name']
     db['global']['discounts'][code] = {'percent': context.user_data['new_disc_percent'], 'limit': limit, 'used': 0}
     save_db(db)
     await update.message.reply_text("✅ کد ساخته شد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="store_discounts")]]))
     return ConversationHandler.END
 
 async def handle_check_discount(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    code = update.message.text.strip()
-    db = load_db()
+    code, db = update.message.text.strip(), load_db()
     discounts = db['global'].get('discounts', {})
-    
     if code in discounts and discounts[code].get('used', 0) < discounts[code]['limit']:
         db['global']['discounts'][code]['used'] = discounts[code].get('used', 0) + 1
         save_db(db)
@@ -1254,8 +1248,7 @@ async def handle_edit_bot_username(update: Update, context: ContextTypes.DEFAULT
     username = update.message.text.strip()
     if not username.startswith('@'): username = '@' + username
     user_id, b_id, db = str(update.effective_user.id), context.user_data['edit_bid'], load_db()
-    token = get_token_by_id(user_id, b_id, db)
-    db[user_id]['bots'][token]['bot_username'] = username
+    db[user_id]['bots'][get_token_by_id(user_id, b_id, db)]['bot_username'] = username
     save_db(db)
     await update.message.reply_text("✅ آیدی ربات ثبت شد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data=f"mybot_{b_id}")]]))
     return ConversationHandler.END
@@ -1264,8 +1257,7 @@ async def handle_new_admin_id(update: Update, context: ContextTypes.DEFAULT_TYPE
     try: new_admin_id = int(update.message.text)
     except ValueError: return WAITING_NEW_ADMIN_ID
     user_id, b_id, db = str(update.effective_user.id), context.user_data['edit_bid'], load_db()
-    token = get_token_by_id(user_id, b_id, db)
-    db[user_id]['bots'][token]['admin_id'] = new_admin_id
+    db[user_id]['bots'][get_token_by_id(user_id, b_id, db)]['admin_id'] = new_admin_id
     save_db(db)
     await update.message.reply_text("✅ شناسه مدیر تغییر یافت.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")]]))
     return ConversationHandler.END
@@ -1273,8 +1265,7 @@ async def handle_new_admin_id(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def handle_force_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     user_id, b_id, db = str(update.effective_user.id), context.user_data['edit_bid'], load_db()
-    token = get_token_by_id(user_id, b_id, db)
-    db[user_id]['bots'][token]['force_join'] = "" if text == "لغو" else text
+    db[user_id]['bots'][get_token_by_id(user_id, b_id, db)]['force_join'] = "" if text == "لغو" else text
     save_db(db)
     await update.message.reply_text("✅ تنظیم شد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data=f"mybot_{b_id}")]]))
     return ConversationHandler.END
@@ -1318,13 +1309,24 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def handle_manage_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    target_uid = update.message.text.strip()
-    db = load_db()
+    target_uid, db = update.message.text.strip(), load_db()
     if target_uid not in db or target_uid == 'global':
         await update.message.reply_text("❌ یافت نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")]]))
         return ConversationHandler.END
-    # [بخش‌های مدیریتی مشابه کد قبلی...]
-    await update.message.reply_text(f"⚙️ مدیریت کاربر {target_uid} باز شد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙", callback_data="cancel_flow")]]))
+    udata = db[target_uid]
+    c_anon = sum(1 for c in udata.get('credits', []) if c['type'] == 'anon')
+    c_lottery = sum(1 for c in udata.get('credits', []) if c['type'] == 'lottery')
+    b_count = len(udata.get('bots', {}))
+    msg = (f"⚙️ **وضعیت کاربر:** `{target_uid}`\n\n🎭 اشتراک ناشناس استفاده نشده: {c_anon}\n"
+           f"🎁 اشتراک قرعه‌کشی استفاده نشده: {c_lottery}\n🤖 ربات‌های فعال: {b_count}\n\nگزینه مورد نظر را انتخاب کنید:")
+    keyboard = [[InlineKeyboardButton(f"🤖 مدیریت ربات {bdata.get('bot_username', t.split(':')[0])}", callback_data=f"admmngbot_{target_uid}_{t.split(':')[0]}")] for t, bdata in udata.get('bots', {}).items()]
+    keyboard.extend([
+        [InlineKeyboardButton("➕ افزودن اشتراک ناشناس", callback_data=f"admadd_anon_{target_uid}")],
+        [InlineKeyboardButton("➕ افزودن اشتراک قرعه‌کشی", callback_data=f"admadd_lottery_{target_uid}")],
+        [InlineKeyboardButton("💬 ارسال پیام تکی به این کاربر", callback_data=f"admsendmsg_{target_uid}")],
+        [InlineKeyboardButton("🔙 بازگشت", callback_data="cancel_flow")]
+    ])
+    await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
     return ConversationHandler.END
 
 async def handle_mod_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1402,7 +1404,7 @@ async def get_or_create_app(token, bot_type, admin_id):
         
     elif bot_type == 'lottery':
         app.bot_data['admin_id'] = admin_id
-        app.bot_data['db_file'] = f"giveaway_db_{token.split(':')[0]}.json"
+        app.bot_data['db_file'] = f"/tmp/giveaway_db_{token.split(':')[0]}.json"
         l_load_data(app.bot_data['db_file'], app.bot_data)
         
         app.add_handler(CommandHandler("start", l_start))
@@ -1448,7 +1450,6 @@ def webhook_handler(token):
 
 @flask_app.route('/', methods=['GET'])
 def index():
-    return "SaaS Bot Platform is running on Vercel!"
+    return "SaaS Bot Platform is running perfectly on Vercel!"
 
-# اینستنس اپلیکیشن مخصوص ورسل
 app = flask_app
