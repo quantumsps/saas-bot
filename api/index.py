@@ -14,7 +14,7 @@ from telegram.error import BadRequest
 # ==========================================
 # ⚙️ تنظیمات اصلی و سراسری
 # ==========================================
-MAIN_BOT_TOKEN = "8842980077:AAGZ2bQ_1OC3pESktNy5FI_6M_49UNvNJWE" 
+MAIN_BOT_TOKEN = "9018084227:AAFacpqEejBGK71LOO_2BiiX6PHiWJaMed4" 
 ADMIN_ID = 8898908182  
 
 DB_FILE = "/tmp/saas_database.json" 
