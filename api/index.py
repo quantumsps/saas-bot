@@ -4,7 +4,6 @@ import asyncio
 import random
 import requests
 from datetime import datetime, timedelta
-from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler, 
@@ -15,10 +14,9 @@ from telegram.error import BadRequest
 # ==========================================
 # ⚙️ تنظیمات اصلی و سراسری
 # ==========================================
-MAIN_BOT_TOKEN = "9018084227:AAFacpqEejBGK71LOO_2BiiX6PHiWJaMed4" # توکن ربات ساز
-ADMIN_ID = 8898908182  # آیدی شما (مالک ربات ساز)
+MAIN_BOT_TOKEN = "8842980077:AAGZ2bQ_1OC3pESktNy5FI_6M_49UNvNJWE" 
+ADMIN_ID = 8898908182  
 
-# ⚠️ در ورسل فقط پوشه tmp قابل نوشتن است
 DB_FILE = "/tmp/saas_database.json" 
 VERCEL_DOMAIN = "saas-bot-uyu8.vercel.app" 
 
@@ -425,7 +423,6 @@ async def l_handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bd['lottery']["end_dt"] = end_dt
             bd['participants'].clear()
             bd['admin_states'][user.id] = "IDLE"
-            # ⚠️ در ورسل تایمر اتوماتیک دقیق کار نمی‌کند
             bd['lottery']["status"] = "ACTIVE"
             l_save_data(bd['db_file'], bd) 
             await update.message.reply_text(f"✅ فعال شد!\nپایان: {end_dt}\n(توجه: در سرورلس زمان‌بندی اتوماتیک دقیق نیست)", reply_markup=get_admin_menu())
@@ -959,7 +956,6 @@ async def handle_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYP
             b_type_name = "ناشناس" if bdata.get('bot_type', 'anon') == 'anon' else "قرعه‌کشی"
             b_username = bdata.get('bot_username', f"{t.split(':')[0]}")
             
-            # در سیستم سرورلس ورسل، اگر انقضا نرسیده باشد و مسدود نباشد، آن را فعال در نظر می‌گیریم
             is_active = (datetime.now() < datetime.fromisoformat(bdata['expiry_date'])) and not bdata.get('user_disabled') and not bdata.get('admin_disabled')
             icon = '🟢' if is_active else '🔴'
             
@@ -1110,11 +1106,17 @@ async def wrong_receipt_format(update: Update, context: ContextTypes.DEFAULT_TYP
     return WAITING_RECEIPT
 
 async def handle_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # --- قفل ایمنی برای از دست رفتن حافظه ---
+    buy_action = context.user_data.get('buy_action')
+    if not buy_action:
+        await update.message.reply_text("❌ خطا: اطلاعات خرید شما در حافظه سرور منقضی شده است. لطفاً مجدداً دکمه خرید را بزنید.")
+        return ConversationHandler.END
+
     user = update.effective_user
     photo_id = update.message.photo[-1].file_id if update.message.photo else update.message.document.file_id
     days = context.user_data.get('buy_plan_days', 30)
     
-    if context.user_data.get('buy_action', 'new') == 'new': 
+    if buy_action == 'new': 
         bot_type = context.user_data.get('buy_plan_type', 'anon')
         cb_approve, cb_reject = f"approve_new_{user.id}_{bot_type}_{days}", f"reject_new_{user.id}_{bot_type}_{days}"
         caption_txt = f"خرید اشتراک جدید ({bot_type}) ({days} روزه)"
@@ -1145,17 +1147,28 @@ async def handle_admin_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("❌ آیدی باید عددی باشد.")
         return WAITING_ADMIN_ID
+
+    # --- قفل ایمنی برای از دست رفتن حافظه ---
+    token = context.user_data.get('temp_token')
+    if not token:
+        await update.message.reply_text("❌ خطا: متاسفانه اطلاعات نشست شما در سرور منقضی شده است. لطفاً ساخت ربات را مجدداً از منو آغاز کنید.")
+        return ConversationHandler.END
         
-    user_id, token, db = str(update.effective_user.id), context.user_data['temp_token'], load_db()
+    user_id, db = str(update.effective_user.id), load_db()
     bot_type = context.user_data.get('setup_bot_type', 'anon')
     bot_username = context.user_data.get('temp_bot_username', 'نامشخص')
     
     days = 0
-    for i, c in enumerate(db[user_id]['credits']):
+    for i, c in enumerate(db[user_id].get('credits', [])):
         if c['type'] == bot_type:
             days = c['days']
             db[user_id]['credits'].pop(i)
             break
+            
+    # --- جلوگیری از باگ 0 روز ---
+    if days == 0:
+        await update.message.reply_text("❌ خطا: شما اشتراک استفاده‌نشده‌ای برای این نوع ربات ندارید (یا اطلاعات ریست شده است).")
+        return ConversationHandler.END
             
     db[user_id]['bots'][token] = {
         'bot_type': bot_type, 
@@ -1167,7 +1180,6 @@ async def handle_admin_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     save_db(db)
     
-    # 📌 تنظیم Webhook برای ربات جدید در لحظه ساخته شدن روی ورسل
     webhook_url = f"https://{VERCEL_DOMAIN}/webhook/{token}"
     try:
         requests.get(f"https://api.telegram.org/bot{token}/setWebhook?url={webhook_url}")
@@ -1348,9 +1360,12 @@ async def handle_admin_send_msg(update: Update, context: ContextTypes.DEFAULT_TY
     return ConversationHandler.END
 
 # ==========================================
-# 🚀 هسته وب‌هوک Flask (مخصوص ورسل)
+# 🚀 هسته وب‌هوک FastAPI (ضد-هنگ برای ورسل)
 # ==========================================
-flask_app = Flask(__name__)
+from fastapi import FastAPI, Request
+import asyncio
+
+fastapi_app = FastAPI()
 telegram_apps_cache = {}
 
 async def get_or_create_app(token, bot_type, admin_id):
@@ -1418,15 +1433,14 @@ async def get_or_create_app(token, bot_type, admin_id):
     telegram_apps_cache[token] = app
     return app
 
-async def process_update_async(token, bot_type, admin_id, update_dict):
-    tg_app = await get_or_create_app(token, bot_type, admin_id)
-    update = Update.de_json(update_dict, tg_app.bot)
-    await tg_app.process_update(update)
-
-@flask_app.route(f'/webhook/<token>', methods=['POST'])
-def webhook_handler(token):
-    update_dict = request.get_json()
-    if not update_dict: return "OK", 200
+@fastapi_app.post('/webhook/{token}')
+async def webhook_handler(token: str, request: Request):
+    try:
+        update_dict = await request.json()
+    except:
+        return {"status": "OK"}
+        
+    if not update_dict: return {"status": "OK"}
         
     if token == MAIN_BOT_TOKEN:
         bot_type = 'main'
@@ -1434,29 +1448,34 @@ def webhook_handler(token):
     else:
         db = load_db()
         uid = get_uid_by_token(token, db)
-        if not uid: return "Not Found", 404
+        if not uid: return {"status": "Not Found"}
         
         bdata = db[uid]['bots'][token]
         expiry = datetime.fromisoformat(bdata['expiry_date'])
         
         if datetime.now() > expiry or bdata.get('admin_disabled') or bdata.get('user_disabled'):
-            return "Disabled", 403
+            return {"status": "Disabled"}
             
         bot_type = bdata.get('bot_type', 'anon')
         admin_id = bdata['admin_id']
 
-    asyncio.run(process_update_async(token, bot_type, admin_id, update_dict))
-    return "OK", 200
+    try:
+        tg_app = await get_or_create_app(token, bot_type, admin_id)
+        update = Update.de_json(update_dict, tg_app.bot)
+        await tg_app.process_update(update)
+    except Exception as e:
+        print(f"Error processing update: {e}")
+        
+    return {"status": "OK"}
 
-@flask_app.route('/setup', methods=['GET'])
+@fastapi_app.get('/setup')
 def setup_webhook():
-    # این دستور به تلگرام می‌فهماند که ربات را به ورسل وصل کند
     webhook_url = f"https://{VERCEL_DOMAIN}/webhook/{MAIN_BOT_TOKEN}"
     res = requests.get(f"https://api.telegram.org/bot{MAIN_BOT_TOKEN}/setWebhook?url={webhook_url}")
     return res.json()
 
-@flask_app.route('/', methods=['GET'])
+@fastapi_app.get('/')
 def index():
-    return "SaaS Bot Platform is running perfectly on Vercel!"
+    return "SaaS Bot Platform is running perfectly on Vercel with FastAPI!"
 
-app = flask_app
+app = fastapi_app
