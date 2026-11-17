@@ -15,7 +15,7 @@ from telegram.error import BadRequest
 # ==========================================
 # ⚙️ تنظیمات اصلی و سراسری
 # ==========================================
-MAIN_BOT_TOKEN = "8842980077:AAGZ2bQ_1OC3pESktNy5FI_6M_49UNvNJWE" # توکن ربات ساز
+MAIN_BOT_TOKEN = "9018084227:AAFacpqEejBGK71LOO_2BiiX6PHiWJaMed4" # توکن ربات ساز
 ADMIN_ID = 8898908182  # آیدی شما (مالک ربات ساز)
 
 # ⚠️ در ورسل فقط پوشه tmp قابل نوشتن است
