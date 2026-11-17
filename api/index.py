@@ -19,7 +19,7 @@ MAIN_BOT_TOKEN = "9018084227:AAFacpqEejBGK71LOO_2BiiX6PHiWJaMed4" # توکن ر�
 ADMIN_ID = 8898908182  # آیدی شما (مالک ربات ساز)
 DB_FILE = "saas_database.json"
 
-VERCEL_DOMAIN = "[https://api.telegram.org/bot8842980077:AAGZ2bQ_1OC3pESktNy5FI_6M_49UNvNJWE/setWebhook?url=https://](https://api.telegram.org/bot8842980077:AAGZ2bQ_1OC3pESktNy5FI_6M_49UNvNJWE/setWebhook?url=https://)[YOUR_VERCEL_DOMAIN]/webhook/8842980077:AAGZ2bQ_1OC3pESktNy5FI_6M_49UNvNJWE" # ⚠️ آدرس دقیق پروژه ورسل خود را اینجا بگذارید (بدون https)
+VERCEL_DOMAIN = "https://saas-bot-uyu8.vercel.app" # ⚠️ آدرس دقیق پروژه ورسل خود را اینجا بگذارید (بدون https)
 
 CARD_NUMBER = "6219861837792000"
 CARD_NAME = "امیر ابراهیمی"
